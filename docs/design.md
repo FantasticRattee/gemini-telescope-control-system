@@ -1,3 +1,5 @@
+> **Phase 2 design (D4).** These diagrams cover the three assigned use cases. Method, field and status names follow the implementation in `gemini-1/implementations/ocs` where it exists. The design separates `SciencePlanFacade`, `ObservingProgramFacade`, repositories and helper classes; the implementation consolidates the two facades and the repositories into the single class `OCS` (which implements `GeminiAPI`), and does not implement `Validator`, `StarCatalog` or `TelescopeSchedule` (see the README).
+
 ## Create Science Plan Activity Diagram
 ```mermaid
 flowchart TD
@@ -41,8 +43,8 @@ flowchart TD
     U --> D
 
     H -- Yes --> I{Save or Save as Draft?}
-    I -- Draft --> J[Save plan with status = INCOMPLETE]
-    I -- Final --> K[Save plan with status = SAVED]
+    I -- Draft --> J[Save plan as draft: status = CREATED, marked incomplete]
+    I -- Final --> K[Save plan with status = CREATED]
 
     J --> L[Show confirmation to Astronomer]
     K --> L
@@ -62,12 +64,13 @@ flowchart TD
 ## Create Science Plan Sequence Diagram
 ```mermaid
 sequenceDiagram
-    participant Astronomer
+    actor Astronomer
     participant UI
-    participant Validator
+    participant SPF as SciencePlanFacade
     participant StarCatalog
+    participant Validator
     participant TelescopeSchedule
-    participant SciencePlanDB
+    participant SPR as SciencePlanRepository
 
     %% === 1. Start Creating Plan ===
     Astronomer->>UI: Click "Create Science Plan"
@@ -77,35 +80,43 @@ sequenceDiagram
     Astronomer->>UI: Enter plan details (Name, Funding, Objective, Dates)
     Astronomer->>UI: Select telescope
     Astronomer->>UI: Select target star
-    UI->>StarCatalog: checkTargetInCatalogue()
-    StarCatalog-->>UI: targetValid / invalid
 
     %% === 3. Enter Data Processing ===
-    Astronomer->>UI: Enter data processing settings (FileType, Quality, ColorType, Contrast, etc.)
+    Astronomer->>UI: Enter data processing settings (FileType, FileQuality, ColorType, Contrast, etc.)
+    Astronomer->>UI: Click Save or Save as Draft
 
     %% === 4. Validation ===
-    UI->>Validator: validateAllInputs(data)
-    Validator->>TelescopeSchedule: checkDateConflict(telescope, dates)
-    TelescopeSchedule-->>Validator: conflictFound / OK
-    Validator-->>UI: return validationResults
+    UI->>SPF: createSciencePlan(sp, astronomer)
+    SPF->>StarCatalog: containsTarget(target)
+    StarCatalog-->>SPF: true / false
+    SPF->>Validator: validateInputs(sp)
+    Validator-->>SPF: true / false
+    SPF->>SPR: existsByName(name)
+    SPR-->>SPF: true / false
+    SPF->>TelescopeSchedule: hasConflict(telescope, startDate, endDate)
+    TelescopeSchedule-->>SPF: true / false
 
     alt Invalid Input
+        SPF-->>UI: Error message
         UI-->>Astronomer: Show specific error message
         Note right of UI: e.g. Missing fields, Date error, Name exists,<br/>Funding invalid, Target not found,<br/>ColorType dependency missing,<br/>OCS incompatibility, network failure
     else Valid Input
-        Astronomer->>UI: Choose Save or Save as Draft
+        SPF->>SPF: assign planNo and creator, setStatus(CREATED)
 
         alt Save as Draft
-            UI->>SciencePlanDB: savePlan(status=INCOMPLETE)
-            SciencePlanDB-->>UI: Return confirmation
+            SPF->>SPR: save(sp) (draft, marked incomplete)
+            SPR-->>SPF: Saved
+            SPF-->>UI: Return confirmation
             UI-->>Astronomer: Draft saved. You can resume later.
         else Save Final Plan
-            UI->>SciencePlanDB: savePlan(status=SAVED)
+            SPF->>SPR: save(sp)
             alt Network/System error
-                SciencePlanDB-->>UI: Error: Unable to save
+                SPR-->>SPF: Error: Unable to save
+                SPF-->>UI: Error message
                 UI-->>Astronomer: Show error: Try again later
             else
-                SciencePlanDB-->>UI: Return confirmation
+                SPR-->>SPF: Saved
+                SPF-->>UI: "Science Plan created successfully with Plan No: N"
                 UI-->>Astronomer: Plan saved successfully
             end
         end
@@ -122,8 +133,10 @@ sequenceDiagram
             UI-->>Astronomer: Confirm delete?
             Astronomer-->>UI: Confirm = Yes/No
             alt Confirm = Yes
-                UI->>SciencePlanDB: deletePlan()
-                SciencePlanDB-->>UI: Deleted
+                UI->>SPF: deleteSciencePlanByNo(planNo)
+                SPF->>SPR: delete(sp)
+                SPR-->>SPF: Deleted
+                SPF-->>UI: true
                 UI-->>Astronomer: Show success message
             else
                 UI-->>Astronomer: Cancel delete
@@ -139,7 +152,7 @@ sequenceDiagram
 flowchart TD
 
     %% Top
-    A([Start]) --> B[Selected Science Plan]
+    A([Start]) --> B[Select 'Science Plans' menu]
 
     B --> C{Any Science Plan?}
 
@@ -149,11 +162,11 @@ flowchart TD
     C -- "Yes" --> E{Status filter?}
 
     %% Status filter branches
-    E -- "Created" --> F1[Show Created ONLY]
-    E -- "Tested" --> F2[Show Tested ONLY]
-    E -- "Submitted" --> F3[Show Submitted ONLY]
-    E -- "Validated" --> F4[Show Validated ONLY]
-    E -- "Executed" --> F5[Show Executed ONLY]
+    E -- "Created" --> F1[Show CREATED ONLY]
+    E -- "Tested" --> F2[Show TESTED ONLY]
+    E -- "Submitted" --> F3[Show SUBMITTED ONLY]
+    E -- "Validated" --> F4[Show VALIDATED ONLY]
+    E -- "Executed" --> F5[Show RUNNING / COMPLETE ONLY]
     E -- "No filter" --> F6[Show All Science Plans]
 
     F1 --> G[Display Science Plan List]
@@ -168,87 +181,87 @@ flowchart TD
 
     H --> I{Draft or Submit?}
 
-    I -- "Draft" --> J[Remain Created status and stored in Science Plan List]
+    I -- "Draft" --> J[Remain CREATED status and stored in Science Plan List]
     J --> Z
 
-    I -- "Submit" --> K{Fully filled or Tested?}
-
-    %% Fully tested?
-    K -- "No" --> L[Show This science plan is incomplete. Please complete and test itbefore submission.]
-    L --> Z
-
-    K -- "Yes" --> M{Confirm?}
+    I -- "Submit" --> M{Confirm?}
 
     %% Confirm?
-    M -- "No" --> N[Return to submitted science plan page]
+    M -- "No" --> N[Return to Science Plans page]
     N --> Z
 
-    M -- "Yes" --> O[Submit selected Science Plan]
-
-    %% Already submitted/executed?
-    O --> P{Already submitted?}
+    %% Already submitted/executed? (checked before anything is changed)
+    M -- "Yes" --> P{Already SUBMITTED, VALIDATED,<br/>RUNNING or COMPLETE?}
 
     P -- "Yes" --> Q[Show: This science plan has already been submitted or executed.]
     Q --> Z
 
-    P -- "No" --> Z
+    %% Only a TESTED plan can be submitted
+    P -- "No" --> K{Status = TESTED?}
+
+    K -- "No" --> L[Show: This science plan is incomplete. Please complete and test it before submission.]
+    L --> Z
+
+    K -- "Yes" --> O[Submit selected Science Plan: set status = SUBMITTED]
+    O --> R[Show: Science plan N submitted successfully.]
+    R --> Z
 ```
 ## Submit Science Plan Sequence Diagram
 ```mermaid
 sequenceDiagram
-    actor User
-    participant UI as User Interface
-    participant System as Science Plan System
-    participant DB as Database
+    actor Astronomer
+    participant UI
+    participant SPF as SciencePlanFacade
+    participant SP as SciencePlan
+    participant SPR as SciencePlanRepository
 
     %% Start
-    User->>UI: Open Science Plan Page
-    UI->>System: Request science plans
-    System->>DB: Fetch science plans
-    DB-->>System: Return list
-    System-->>UI: Display plans list
+    Astronomer->>UI: Open Science Plans page
+    UI->>SPF: getAllSciencePlans()
+    SPF->>SPR: findByAstronomer(astronomer)
+    SPR-->>SPF: Return list
+    SPF-->>UI: Display plans list
 
     alt No science plan exists
-        UI-->>User: Show blank page + "Go to Create Science Plan"
+        UI-->>Astronomer: Show blank page + "Go to Create Science Plan"
     else Science plans exist
-        UI-->>User: Show status filter options
+        UI-->>Astronomer: Show status filter options
 
-        User->>UI: Select status filter
-        UI->>System: Apply filter
-        System-->>UI: Show filtered science plans
+        Astronomer->>UI: Select status filter
+        UI->>SPF: filterSciencePlansByStatus(status)
+        SPF->>SPR: findByStatus(status)
+        SPR-->>SPF: Return filtered list
+        SPF-->>UI: Show filtered science plans
 
-        User->>UI: Select science plan
+        Astronomer->>UI: Select science plan
 
         alt Draft
-            UI->>System: Save as Draft
-            System->>DB: Store plan as Created
-            System-->>UI: Done
+            UI-->>Astronomer: Plan stays CREATED in the Science Plans list
 
         else Submit
-            UI->>System: Validate completeness
+            UI-->>Astronomer: Ask for confirmation
 
-            alt Not fully filled or tested
-                System-->>UI: Show "Plan incomplete" message
-                UI-->>User: Display warning
+            alt Astronomer cancels
+                UI-->>Astronomer: Return to Science Plans page
 
-            else Fully filled/tested
-                UI-->>User: Ask for confirmation
+            else Astronomer confirms
+                UI->>SPF: submitSciencePlan(sp, astronomer)
+                SPF->>SP: getStatus()
+                SP-->>SPF: status
 
-                alt User cancels
-                    UI-->>User: Return to submitted science plan page
+                alt status is SUBMITTED, VALIDATED, RUNNING or COMPLETE
+                    SPF-->>UI: "This science plan has already been submitted or executed."
+                    UI-->>Astronomer: Display message
 
-                else User confirms
-                    UI->>System: Submit science plan
-                    System->>DB: Check submission status
+                else status is not TESTED
+                    SPF-->>UI: "This science plan is incomplete. Please complete and test it before submission."
+                    UI-->>Astronomer: Display warning
 
-                    alt Already submitted?
-                        System-->>UI: Show "This science plan has already been submitted or executed"
-                        UI-->>User: Display message
-
-                    else Not submitted
-                        System->>DB: Mark plan as submitted
-                        System-->>UI: Submission successful
-                    end
+                else status is TESTED
+                    SPF->>SP: setStatus(SUBMITTED)
+                    SPF->>SPR: save(sp)
+                    SPF-->>UI: "Science plan N submitted successfully."
+                    UI-->>Astronomer: Display confirmation
                 end
             end
         end
@@ -264,8 +277,8 @@ A2 --> A3{Any validated<br/>plan available?}
 A3 -- No --> E1[Display: 'No validated science plans found.']
 E1 --> A99([End])
 
-A3 -- Yes --> A4[Observer: Select a validated Science Plan by Plan ID]
-A4 --> A5[System: Load base data from Science Plan:<br/> Plan ID, Plan Name, Creator, Funding, Objective, Start and End dates, Telescope assigned, Target]
+A3 -- Yes --> A4[Observer: Select a validated Science Plan by Plan No]
+A4 --> A5[System: Load base data from Science Plan:<br/> Plan No, Plan Name, Creator, Funding, Objective, Start and End dates, Telescope assigned, Target]
 
 A5 --> A5b{Use template?}
 A5b -- Yes --> A5c[System: Load predefined template values<br/>and populate fields]
@@ -273,14 +286,15 @@ A5b -- No --> A6
 
 A5c --> A6
 
-A6[Observer: Provide required details<br/> Gemini Location, Optics Primary, F-stop, set Optics Secondary RMS, Science Fold Mirror Degree, Science Fold Mirror Type, Module Content, Calibration Unit, Light Type, Telescope Position Pair]
+A6[Observer: Provide required details<br/> Optics Primary, F-stop, Optics Secondary RMS, Science Fold Mirror Degree, Science Fold Mirror Type, Module Content, Calibration Unit, Light Type, Telescope Position Pairs<br/>Gemini location = telescope assigned in the plan]
 
-A6 --> A7{All required<br/>fields filled?}
+A6 --> A11[Observer: Click <br/> 'Create Observing Program']
+A11 --> A7{All required<br/>fields filled?}
 A7 -- No --> E2[Display error: Missing required fields<br/>Please enter the necessary information before proceeding]
 E2 --> A6
 
 A7 -- Yes --> A8{All values valid<br/>within defined lists?}
-A8 -- No --> E3[Display error: Invalid value<br/>e.g., Calibration Unit must be<br/>one of FLAT, DARK, ARC, BIAS]
+A8 -- No --> E3[Display error: Invalid value<br/>e.g., Calibration Unit must be<br/>one of ARGON, XENON, THAR, CUAR]
 E3 --> A6
 
 A8 -- Yes --> A9[System: Validate all entries<br/>Check completeness, data format, allowed values]
@@ -288,8 +302,7 @@ A9 --> A10{All validation<br/>checks passed?}
 A10 -- No --> E4[System: Record the Error and </br>Display: Show error Summary]
 E4 --> A6
 
-A10 -- Yes --> A11[Observer: Click <br/> 'Create Observing Program']
-A11 --> A12[System Update: Create new Observing Program record<br/>Status = CREATED<br/>Link with original Science Plan via Plan ID]
+A10 -- Yes --> A12[System Update: Create new Observing Program record<br/>Status = CREATED<br/>Link with original Science Plan and Science Observer id]
 
 A12 --> A13[System: Save to database]
 A13 --> A14{Database save<br/>successful?}
@@ -298,79 +311,80 @@ E5 --> A11
 
 A14 -- Yes --> A15[System: Display confirmation<br/>'Observing Program created and linked<br/>to Science Plan #XXXX']
 A15 --> A16[System: Notify Astronomer<br/>'Your Science Plan has been<br/>transformed to Observing Program']
-A16 --> A17[System: Notify Technical Team<br/>'New Observing Program ready for review']
-A17 --> A99
+A16 --> A99
 ```
 ## Create Observing Program Sequence Diagram
 ```mermaid
 sequenceDiagram
     autonumber
-    participant SO as ScienceObserver
+    actor SO as ScienceObserver
     participant UI as UI
-    participant SP as SciencePlan
-    participant OP as ObservingProgram
+    participant SPF as SciencePlanFacade
+    participant OPF as ObservingProgramFacade
     participant V as Validator
-    participant DB as Database
-    participant A as Astronomer
-    participant T as TechnicalTeam
+    participant OP as ObservingProgram
+    participant OPR as ObservingProgramRepository
+    actor A as Astronomer
 
     SO->>UI: openCreateObservingProgramPage()
-    UI->>SP: listPlans(status="VALIDATED")
+    UI->>SPF: filterSciencePlansByStatus(VALIDATED)
 
     alt No validated plans found
-        SP-->>UI: return(emptyList)
+        SPF-->>UI: return(emptyList)
         UI-->>SO: display("No validated science plans found.")
     else Validated plans available
-        SP-->>UI: return(validatedPlansList)
+        SPF-->>UI: return(validatedPlansList)
         UI-->>SO: displayValidatedPlans()
 
-        SO->>UI: selectSciencePlan(planID)
-        UI->>SP: loadPlan(planID)
-        SP-->>UI: return(planData)
+        SO->>UI: selectSciencePlan(planNo)
+        UI->>SPF: getSciencePlanByNo(planNo)
+        SPF-->>UI: return(sp)
         UI-->>SO: displayPlanDetails()
 
         SO->>UI: chooseTemplate(templateID)
         UI-->>SO: populateFields(templateData)
 
         SO->>UI: enterProgramDetails(...)
+        SO->>UI: clickCreateObservingProgram()
+        UI->>OPF: createObservingProgram(sp, opticsPrimary, fStop, opticsSecondaryRMS, scienceFoldMirrorDegree, scienceFoldMirrorType, moduleContent, calibrationUnit, lightType, telePositionPairs, so)
 
-        UI->>V: validateRequiredFields(data)
+        OPF->>V: validateRequiredFields(op)
         alt Missing Fields
-            V-->>UI: return("FAILED: Missing fields")
+            V-->>OPF: false
+            OPF-->>UI: return(null)
             UI-->>SO: display("Missing required fields.")
         else All fields present
-            V-->>UI: return("OK")
+            V-->>OPF: true
 
-            UI->>V: validateValues(...)
+            OPF->>V: validateAllowedValues(op)
             alt Invalid Values
-                V-->>UI: return("FAILED: Invalid value")
+                V-->>OPF: false
+                OPF-->>UI: return(null)
                 UI-->>SO: display("Invalid value.")
             else Valid
-                V-->>UI: return("OK")
+                V-->>OPF: true
 
-                UI->>V: finalValidation(data)
+                OPF->>V: validateObservingProgram(op)
                 alt Validation Failed
-                    V-->>UI: return(errorSummary)
+                    V-->>OPF: false (errorSummary)
+                    OPF-->>UI: return(null)
                     UI-->>SO: display(errorSummary)
                 else Passed
-                    V-->>UI: return("PASSED")
+                    V-->>OPF: true
 
-                    SO->>UI: clickCreateObservingProgram()
-                    UI->>OP: createObservingProgram(planID, programData)
-                    OP->>OP: setStatus("CREATED")
-                    OP->>DB: saveObservingProgram()
+                    OPF->>OP: setStatus(CREATED)
+                    OPF->>OPR: save(op)
 
                     alt Save Failed
-                        DB-->>OP: return("FAILED")
-                        OP-->>UI: return("FAILED")
+                        OPR-->>OPF: return("FAILED")
+                        OPF-->>UI: return(null)
                         UI-->>SO: display("Save failed.")
                     else Save Successful
-                        DB-->>OP: return("SUCCESS")
-                        OP-->>UI: return(programID)
+                        OPR-->>OPF: return("SUCCESS")
+                        OPF-->>UI: return(op)
 
-                        UI-->>SO: display("Program linked to Plan #" + planID)
+                        UI-->>SO: display("Program linked to Plan #" + planNo)
                         UI->>A: notify("Plan transformed to Observing Program.")
-                        UI->>T: notify("Observing Program ready for review.")
                     end
                 end
             end
@@ -385,78 +399,70 @@ classDiagram
 %% MAIN ACTORS
 %% ===========================
 class Astronomer {
-    +astronomerId : int
-    +name : String
-    +Institution: String
-    +createSciencePlan()
-    +submitSciencePlan(sp:SciencePlan)
+    -id : int
+    -firstName : String
+    -lastName : String
+    -institution : String
+    +getName() String
 }
 
 class ScienceObserver {
-    +observerId : int
-    +name : String
-    +createObservingProgram(sp:SciencePlan)
-    +validateSciencePlan(sp:SciencePlan)
+    -id : int
+    +getId() int
 }
 
 %% ===========================
 %% DOMAIN ENTITIES
 %% ===========================
 class SciencePlan {
-    +planId : int
-    +name : String
-    +funding : double
-    +objective : String
-    +startDate : Date
-    +endDate : Date
-    +telescope : String
-    +target : String
-    +status : SciencePlanStatus
-    +processing : DataProcessingSettings
+    -planNo : int
+    -name : String
+    -creator : String
+    -funding : double
+    -objective : String
+    -startDate : Date
+    -endDate : Date
+    -telescope : String
+    -target : String
+    -fileType : FileType
+    -fileQuality : FileQuality
+    -colorType : ColorType
+    -contrast : Double
+    -brightness : Double
+    -saturation : Double
+    -highlights : Double
+    -exposure : Double
+    -shadows : Double
+    -whites : Double
+    -blacks : Double
+    -luminance : Double
+    -hue : Double
+    -status : STATUS
 
-    +updateDetails(...)
-    +markAsDraft()
-    +markAsCreated()
-    +markAsTested()
-    +markAsSubmitted()
-}
-
-class DataProcessingSettings {
-    +fileType : FileType
-    +fileQuality : FileQuality
-    +colorType : ColorType
-    +contrast : double
-    +brightness : double
-    +saturation : double
-    +highlights : double
-    +exposure : double
-    +shadows : double
-    +whites : double
-    +blacks : double
-    +luminance : double
-    +hue : double
+    +getStatus() STATUS
+    +setStatus(status : STATUS)
 }
 
 class ObservingProgram {
-    +programId : int
-    +geminiLocation : String
-    +opticsPrimary : String
-    +fStop : double
-    +opticsSecondaryRMS : double
-    +foldMirrorDegree : double
-    +foldMirrorType : String
-    +moduleContent : int
-    +calibrationUnit : String
-    +lightType : String
-    +status : String
+    -sciencePlan : SciencePlan
+    -opticsPrimary : String
+    -fStop : double
+    -opticsSecondaryRMS : double
+    -scienceFoldMirrorDegree : double
+    -scienceFoldMirrorType : FoldMirrorType
+    -moduleContent : int
+    -calibrationUnit : CalibrationUnit
+    -lightType : LightType
+    -telePositionPairs : TelePositionPair[]
+    -observerId : int
+    -status : STATUS
 
-    +addTelePositionPair(pair:TelePositionPair)
-    +LoadValidatedSciencePlan()
+    +setStatus(status : STATUS)
 }
 
 class TelePositionPair {
-    +azimuth : double
-    +altitude : double
+    -direction : double
+    -degree : double
 }
 
 %% ===========================
@@ -467,21 +473,23 @@ class SciencePlanRepository {
     +delete(sp:SciencePlan)
     +findById(id:int) : SciencePlan
     +findByAstronomer(a:Astronomer) : List~SciencePlan~
-    +findByStatus(status:SciencePlanStatus) : List~SciencePlan~
+    +findByStatus(status:STATUS) : List~SciencePlan~
     +existsByName(name:String) : boolean
     +hasDateConflict(telescope:String, start:Date, end:Date) : boolean
 }
 
 class ObservingProgramRepository {
     +save(op:ObservingProgram)
-    +findById(id:int) : ObservingProgram
+    +findBySciencePlan(sp:SciencePlan) : ObservingProgram
 }
 
 %% ===========================
 %% SUPPORTING SUBSYSTEMS
 %% ===========================
 class Validator {
-    +validateSciencePlan(sp:SciencePlan) : boolean
+    +validateInputs(sp:SciencePlan) : boolean
+    +validateRequiredFields(op:ObservingProgram) : boolean
+    +validateAllowedValues(op:ObservingProgram) : boolean
     +validateObservingProgram(op:ObservingProgram) : boolean
 }
 
@@ -498,24 +506,28 @@ class TelescopeSchedule {
 %% ===========================
 class SciencePlanFacade {
     <<Facade>>
-    +createSciencePlan(data)
-    +validateSciencePlan(data)
-    +saveSciencePlan(sp)
-    +submitSciencePlan(planId)
+    +createSciencePlan(sp:SciencePlan, an:Astronomer) String
+    +testSciencePlan(sp:SciencePlan) String
+    +submitSciencePlan(sp:SciencePlan, an:Astronomer) String
+    +validateSciencePlan(sp:SciencePlan, so:ScienceObserver) SciencePlan
+    +getAllSciencePlans() List~SciencePlan~
+    +filterSciencePlansByStatus(status:STATUS) List~SciencePlan~
+    +getSciencePlanByNo(planNo:int) SciencePlan
+    +deleteSciencePlanByNo(planNo:int) boolean
 }
 
 class ObservingProgramFacade {
     <<Facade>>
-    +loadValidatedPlans()
-    +createObservingProgram(planId, details)
-    +validateObservingDetails(details)
-    +saveProgram(op)
+    +createObservingProgram(sp, opticsPrimary, fStop, opticsSecondaryRMS, scienceFoldMirrorDegree, scienceFoldMirrorType, moduleContent, calibrationUnit, lightType, telePositionPairs, so) ObservingProgram
+    +getObservingProgramBySciencePlan(sp:SciencePlan) ObservingProgram
 }
+
+note for SciencePlanFacade "Implemented together with ObservingProgramFacade\nas class OCS, which implements GeminiAPI.\nThe repositories are in-memory lists inside OCS."
 
 %% ===========================
 %% ENUMS
 %% ===========================
-class SciencePlanStatus {
+class STATUS {
     <<enumeration>>
     CREATED
     TESTED
@@ -529,31 +541,60 @@ class SciencePlanStatus {
 
 class FileType {
     <<enumeration>>
-    PNG
-    JPEG
     RAW
+    JPEG
+    PNG
 }
 
 class FileQuality {
     <<enumeration>>
-    LOW
     FINE
+    NORMAL
+    BASIC
 }
 
 class ColorType {
     <<enumeration>>
-    COLOR_MODE
     BW_MODE
+    COLOR_MODE
+}
+
+class FoldMirrorType {
+    <<enumeration>>
+    REFLECTIVE_CONVERGING_BEAM
+    CASSEGRAIN
+}
+
+class CalibrationUnit {
+    <<enumeration>>
+    ARGON
+    XENON
+    THAR
+    CUAR
+}
+
+class LightType {
+    <<enumeration>>
+    MAUNA_KEA_SKY_EMISSION
+    CERRO_PACHON_SKY_EMISSION
 }
 
 %% ===========================
 %% RELATIONSHIPS
 %% ===========================
-Astronomer "1" --> "*" SciencePlan
-ScienceObserver "1" --> "*" ObservingProgram
+Astronomer "1" --> "*" SciencePlan : creates
+ScienceObserver "1" --> "*" ObservingProgram : creates
 
-SciencePlan "1" --> "1" DataProcessingSettings
+ObservingProgram "*" --> "1" SciencePlan : based on
 ObservingProgram "1" --> "*" TelePositionPair
+
+SciencePlan --> STATUS
+SciencePlan --> FileType
+SciencePlan --> FileQuality
+SciencePlan --> ColorType
+ObservingProgram --> FoldMirrorType
+ObservingProgram --> CalibrationUnit
+ObservingProgram --> LightType
 
 SciencePlanRepository --> SciencePlan
 ObservingProgramRepository --> ObservingProgram
@@ -572,6 +613,4 @@ SciencePlanFacade --> TelescopeSchedule
 ObservingProgramFacade --> ObservingProgramRepository
 ObservingProgramFacade --> Validator
 ObservingProgramFacade --> SciencePlanRepository
-
-DataProcessingSettings --> Validator
 ```

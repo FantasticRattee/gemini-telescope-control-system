@@ -33,7 +33,9 @@ public class Main {
 
         sp.setStartDate(startDate);
         sp.setEndDate(endDate);
-        sp.setTelescope("CHILE");
+        // Target "Gemini" (Twins) is in quadrant NQ2 and is observed in February,
+        // so it must use the north telescope (Gemini North, Mauna Kea, Hawaii).
+        sp.setTelescope("HAWAII");
         sp.setTarget("Gemini");
         
         sp.setFileType(SciencePlan.FileType.RAW);
@@ -61,13 +63,16 @@ public class Main {
         String submitResult = ocs.submitSciencePlan(sp, as);
         System.out.println("Submit Result: " + submitResult);
 
+        // === Validate the Science Plan (Science Observer) ===
+        ScienceObserver so = new ScienceObserver(1);
+        SciencePlan validated = ocs.validateSciencePlan(sp, so);
+        System.out.println("Validate Result: " + (validated == null ? "rejected" : validated.getStatus()));
+
         // === Create TelePositionPair ===
         AbstractTelePositionPair[] pairs = new AbstractTelePositionPair[1];
-        pairs[0] = new TelePositionPair(90.0, 45.0); // sample azimuth/elevation
+        pairs[0] = new TelePositionPair(90.0, 45.0); // sample direction/degree
 
-        // === Create Observing Program ===
-        ScienceObserver so = new ScienceObserver(1);
-        
+        // === Create Observing Program (from the VALIDATED plan, Gemini North settings) ===
         ObservingProgram op = ocs.createObservingProgram(
                 sp,
                 "GNZ",
@@ -84,8 +89,10 @@ public class Main {
         
         
 
+        System.out.println("Create Observing Program Result: " + (op == null ? "rejected" : "created"));
+
         // Print output
-        System.out.println("=== Create Science Plan Output ===");
+        System.out.println("=== Summary ===");
         System.out.println("Result: " + result);
         System.out.println("Created By: " + sp.getCreator());
         System.out.println("Plan Status: " + sp.getStatus());
@@ -103,7 +110,8 @@ public class Main {
         
         System.out.println("Science Observer: " + so);
         System.out.println("Observing Program: " + op);
-        
+        System.out.println("Stored for this plan: " + (ocs.getObservingProgramBySciencePlan(sp) == op));
+
 
     }
 }

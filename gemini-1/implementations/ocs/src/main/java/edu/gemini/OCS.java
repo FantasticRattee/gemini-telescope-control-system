@@ -14,7 +14,10 @@ public class OCS implements GeminiAPI<SciencePlan, ObservingProgram, ObservingPr
 	//CreateSciencePlan
 	private ArrayList<SciencePlan> sciencePlans = new ArrayList<>();
 	private int nextPlanNo = 1;
-	
+
+	//CreateObservingProgram
+	private ArrayList<ObservingProgram> observingPrograms = new ArrayList<>();
+
 	
 /////////////////////////////////////////////
     @Override
@@ -248,6 +251,12 @@ public class OCS implements GeminiAPI<SciencePlan, ObservingProgram, ObservingPr
         AbstractTelePositionPair[] telePositionPair,
         ScienceObserver so
     ) {
+        // Step 0: Only a VALIDATED science plan can be turned into an observing program
+        if (!(sp instanceof SciencePlan) || so == null
+                || ((SciencePlan) sp).getStatus() != STATUS.VALIDATED) {
+            return null;
+        }
+
         // Step 1: Create and populate new ObservingProgram
         ObservingProgram op = new ObservingProgram();
         op.setSciencePlan(sp);
@@ -263,17 +272,39 @@ public class OCS implements GeminiAPI<SciencePlan, ObservingProgram, ObservingPr
         op.setObserverId(so.getId()); // or whatever identifies ScienceObserver
         op.setStatus(STATUS.CREATED); // Example status enum
 
-        // Step 2: Save to a list (or database)
-        // observingPrograms.add(op); // if you have a list, like sciencePlans
+        // Step 2: Save to the in-memory list (like sciencePlans)
+        observingPrograms.add(op);
 
         // Step 3: Return created OP
         return op;
     }
-    
+
 
     @Override
-    public ObservingProgram validateSciencePlan(AbstractSciencePlan sp, ScienceObserver so) {
-        return null;
+    public SciencePlan validateSciencePlan(AbstractSciencePlan sp, ScienceObserver so) {
+        // A science observer can only validate a plan that has been SUBMITTED
+        if (!(sp instanceof SciencePlan) || so == null) {
+            return null;
+        }
+        SciencePlan plan = (SciencePlan) sp;
+        if (plan.getStatus() != STATUS.SUBMITTED) {
+            return null;
+        }
+
+        // Required plan details must be present, otherwise the plan is rejected
+        boolean complete = plan.getPlanNo() > 0
+                && !isBlank(plan.getName())
+                && !isBlank(plan.getCreator())
+                && plan.getFunding() > 0
+                && !isBlank(plan.getObjective());
+
+        plan.setStatus(complete ? STATUS.VALIDATED : STATUS.INVALIDATED);
+        updatePlanInList(plan);
+        return plan;
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
     @Override
@@ -283,6 +314,11 @@ public class OCS implements GeminiAPI<SciencePlan, ObservingProgram, ObservingPr
 
     @Override
     public ObservingProgram getObservingProgramBySciencePlan(AbstractSciencePlan sp) {
+        for (ObservingProgram op : observingPrograms) {
+            if (op.getSciencePlan() == sp) {
+                return op;
+            }
+        }
         return null;
     }
 

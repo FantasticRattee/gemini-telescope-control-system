@@ -62,21 +62,6 @@
     execution progress of an Observing Program through states such as
     RUNNING and COMPLETE.
 
-### Observing The Executed Program
-
--   **FR39** - The system shall allow the Science Observer to collect
-    and store astronomical datasets produced during execution of an
-    Observing Program.
--   **FR40** - The system shall allow the Science Observer to validate
-    the integrity of collected datasets (e.g., file completeness,
-    checksum, metadata consistency).
--   **FR41** - The system shall allow the Science Observer to manage
-    collected data, including organizing, cataloging, and associating
-    datasets with the corresponding Observing Program.
--   **FR42** - The system shall allow the Science Observer to transmit
-    or make available the collected and validated data to the Astronomer
-    who submitted the Science Plan.
-
 ### General Functional requirements of Science Observer
 
 -   **FR24** - The system shall allow the Science Observer to update the
@@ -120,49 +105,64 @@
     the validation status of an Observing Program for coordination and
     readiness.
 
+### Observing The Executed Program
+
+-   **FR39** - The system shall allow the Science Observer to collect
+    and store astronomical datasets produced during execution of an
+    Observing Program.
+-   **FR40** - The system shall allow the Science Observer to validate
+    the integrity of collected datasets (e.g., file completeness,
+    checksum, metadata consistency).
+-   **FR41** - The system shall allow the Science Observer to manage
+    collected data, including organizing, cataloging, and associating
+    datasets with the corresponding Observing Program.
+-   **FR42** - The system shall allow the Science Observer to transmit
+    or make available the collected and validated data to the Astronomer
+    who submitted the Science Plan.
+
 ## Staff Operation
 
 ### When Receiving an Observing Program (from Science Observer)
 
--   **FR1** - The system shall allow Operations Staff to retrieve
+-   **FR43** - The system shall allow Operations Staff to retrieve
     submitted Observing Programs from the sequencer for execution.
--   **FR2** - The system shall display all Observing Program parameters
+-   **FR44** - The system shall display all Observing Program parameters
     (telescope site, optics, calibration unit, light type, waypoints,
     module content, special equipment).
--   **FR3** - The system shall allow Operations Staff to initiate
+-   **FR45** - The system shall allow Operations Staff to initiate
     execution of an Observing Program.
--   **FR4** - The system shall allow Operations Staff to pause, resume,
+-   **FR46** - The system shall allow Operations Staff to pause, resume,
     or cancel an Observing Program during execution.
--   **FR5** - The system shall provide real-time monitoring of telescope
+-   **FR47** - The system shall provide real-time monitoring of telescope
     status, instrument configurations, and execution progress of the
     program.
--   **FR6** - The system shall log execution events, errors, and
+-   **FR48** - The system shall log execution events, errors, and
     operator interventions for audit and troubleshooting.
--   **FR7** - The system shall allow Operations Staff to override or
+-   **FR49** - The system shall allow Operations Staff to override or
     adjust telescope operations when unsafe conditions or equipment
     faults are detected.
--   **FR8** - The system shall provide alerts when execution conflicts
+-   **FR50** - The system shall provide alerts when execution conflicts
     arise (e.g., unsafe waypoints, hardware unavailability).
--   **FR9** - The system shall allow Operations Staff to update the
+-   **FR51** - The system shall allow Operations Staff to update the
     operational status of telescope units after validation tests (e.g.,
     declare a faulty unit operational again).
 
 ### General Functional Requirements of Staff Operation
 
--   **FR10** - The system shall allow Operations Staff to directly
+-   **FR52** - The system shall allow Operations Staff to directly
     control telescope subsystems in operation mode (e.g., slewing,
     focusing, spectrograph slit adjustments).
--   **FR11** - The system shall allow Operations Staff to access and
+-   **FR53** - The system shall allow Operations Staff to access and
     update operation tables (e.g., list of installed filters) in update
     mode, while Astronomers can only view them.
--   **FR12** - The system shall allow Operations Staff to perform
+-   **FR54** - The system shall allow Operations Staff to perform
     diagnostic tests on telescope and instrument subsystems.
--   **FR13** - The system shall provide multi-point monitoring, allowing
+-   **FR55** - The system shall provide multi-point monitoring, allowing
     Operations Staff to supervise telescope use from multiple stations.
--   **FR14** - The system shall allow Operations Staff to advise
+-   **FR56** - The system shall allow Operations Staff to advise
     Observers by providing operational status and guidance on telescope
     use.
--   **FR15** - The system shall allow Operations Staff to access
+-   **FR57** - The system shall allow Operations Staff to access
     maintenance procedures when subsystems require intervention.
 
 ## Visitor
@@ -191,5 +191,4 @@
     settings and status information.
 -   **NFR3** - The system shall provide status displays that are either
     automatically updated or available on request without interfering
-    with ongoing operations. ... (truncated for brevity but includes all
-    user-provided content)
+    with ongoing operations.

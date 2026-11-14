@@ -21,7 +21,7 @@
    - Use Case Description
    - Activity Diagram
    - Sequence Diagram
-5. [UC04: Transform Plan to Observing Program](#uc04-transform-plan-to-observing-program)
+5. [UC04: Create Observing Program](#uc04-create-observing-program)
    - Use Case Description
    - Activity Diagram
    - Sequence Diagram
@@ -124,16 +124,14 @@ class DateRange {
 
 class Status {
   <<enumeration>>
-  SAVED
+  CREATED
   TESTED
   SUBMITTED
   VALIDATED
-  INVALIDATED
-  CREATED
   RUNNING
-  PAUSED
+  INVALIDATED
+  COMPLETE
   CANCELLED
-  COMPLETED
 }
 
 class Role {
@@ -202,7 +200,7 @@ High
 
 ### Brief Description
 
-The Astronomer creates a new science plan by entering required information such as plan ID, objectives, target star system, observation dates, and telescope location. After finishing input, the plan will be "SAVED" status for the Astronomer to edit, delete and test later before submitting.
+The Astronomer creates a new science plan by entering required information such as plan ID, objectives, target star system, observation dates, and telescope location. After finishing input, the plan will be in "CREATED" status for the Astronomer to edit, delete and test later before submitting.
 
 ### Trigger
 
@@ -233,13 +231,13 @@ flowchart TD
     A11 -- No --> A12[Error: Telescope site not suitable<br/>NQ→HAWAII, SQ→CHILE]
     A12 --> A3
 
-    A11 -- Yes --> A13[Astronomer: Enter waypoints and configurations<br/>mirror, calibration, light type]
-    A13 --> A14[System: Validate waypoints and configurations]
-    A14 --> A15{Waypoints and<br/>configs valid?}
-    A15 -- No --> A16[Error: Invalid waypoint values<br/>or configuration options]
+    A11 -- Yes --> A13[Astronomer: Enter data-processing requirements<br/>file type, file quality, color type,<br/>contrast, brightness, exposure, etc.]
+    A13 --> A14[System: Validate data-processing values]
+    A14 --> A15{Data-processing<br/>values valid?}
+    A15 -- No --> A16[Error: Invalid input value or missing value<br/>for the selected data processing mode]
     A16 --> A13
 
-    A15 -- Yes --> A17[System: Save plan with status = SAVED]
+    A15 -- Yes --> A17[System: Save plan with status = CREATED]
     A17 --> A18[System: Save to database]
     A18 --> A19{Database<br/>save successful?}
     A19 -- No --> A20[Error: Failed to save.<br/>Please try again.]
@@ -310,18 +308,18 @@ sequenceDiagram
             else OK
                 TS-->>UI: return("OK")
 
-                %% === 4. Validate Waypoints and Configurations ===
-                UI->>V: validateWaypoints(waypoints)
-                UI->>V: validateConfigurations(mirror, calibration, lightType)
+                %% === 4. Validate Data-Processing Requirements ===
+                A->>UI: enterDataProcessing(fileType, fileQuality, colorType, imageSettings)
+                UI->>V: validateDataProcessing(fileType, fileQuality, colorType, imageSettings)
                 alt Validation failed
                     V-->>UI: return("FAILED")
-                    UI-->>A: showError("Invalid waypoint or configuration values")
+                    UI-->>A: showError("Invalid input value. Please enter valid decimal numbers within the allowed range.")
                 else All validations passed
                     V-->>UI: return("OK")
 
                     %% === 5. Save Science Plan ===
                     UI->>SP: createSciencePlan(data)
-                    SP->>SP: setStatus("SAVED")
+                    SP->>SP: setStatus("CREATED")
                     SP->>DB: savePlan()
                     DB-->>SP: return("SUCCESS")
                     SP-->>UI: return(planID)
@@ -424,7 +422,7 @@ External trigger
 flowchart TD
 
 A0([Start]) --> A1[Astronomer: Open 'Submit Plan' page]
-A1 --> A2[System: List plans with status = SAVED or TESTED]
+A1 --> A2[System: List plans with status = CREATED or TESTED]
 A2 --> A3[Astronomer: Select plan by Plan ID]
 A3 --> A4{Plan found?}
 A4 -- No --> A5[Notify: 'Plan not found']
@@ -444,13 +442,11 @@ A11 -- Northern Quadrant --> A12[Verify: HAWAII telescope]
 A11 -- Southern Quadrant --> A13[Verify: CHILE telescope]
 A12 --> A14[Check: Data Processing Requirements]
 A13 --> A14
-A14 --> A15[Check: Waypoint validity]
-A15 --> A16[Check: Configuration values<br/>mirror, calibration, light type]
-A16 --> A17[Check: Schedule conflicts with other plans]
+A14 --> A17[Check: Schedule conflicts with other plans]
 
 A17 --> A18{All test<br/>conditions passed?}
-A18 -- No --> A19[System: Set status = SAVED<br/>Keep plan in SAVED state]
-A19 --> A20[System: Display 'Test failed' message<br/>Show failure reasons to Astronomer:<br/>❌ Observation month mismatch<br/>❌ Telescope location mismatch<br/>❌ Missing data-processing requirement<br/>❌ Invalid waypoint or configuration<br/>❌ Schedule conflict]
+A18 -- No --> A19[System: Keep plan in CREATED state]
+A19 --> A20[System: Display 'Test failed' message<br/>Show failure reasons to Astronomer:<br/>❌ Observation month mismatch<br/>❌ Telescope location mismatch<br/>❌ Missing data-processing requirement<br/>❌ Schedule conflict]
 A20 --> A21{Astronomer choice?}
 A21 -- Fix and retry --> A3
 A21 -- Cancel --> A99([End])
@@ -491,7 +487,7 @@ sequenceDiagram
 
     %% === Phase 1: Retrieve existing plan ===
     A->>UI: openSubmitPlanPage()
-    UI->>SP: listPlans(status="SAVED or TESTED")
+    UI->>SP: listPlans(status="CREATED or TESTED")
     SP-->>UI: return(plansList)
     UI-->>A: displayPlans()
 
@@ -523,16 +519,9 @@ sequenceDiagram
         TS-->>SP: return("OK")
     end
 
-    SP->>V: validateConfigurations(mirror, calibration, lightType)
-    alt Configuration invalid
-        V-->>SP: return("FAILED: Invalid configuration")
-    else OK
-        V-->>SP: return("OK")
-    end
-
-    SP->>V: validateWaypoints(waypoints)
-    alt Waypoints invalid
-        V-->>SP: return("FAILED: Invalid waypoints")
+    SP->>V: validateDataProcessing(fileType, fileQuality, colorType, imageSettings)
+    alt Data processing invalid
+        V-->>SP: return("FAILED: Missing data-processing requirement")
     else OK
         V-->>SP: return("OK")
     end
@@ -541,7 +530,7 @@ sequenceDiagram
     alt Any check FAILED
         SP-->>UI: return(testResults: "FAILED")
         UI-->>A: showMessage("❌ Test failed")
-        UI-->>A: displayFailureReasons(["Month mismatch","Telescope mismatch","Missing data","Invalid configuration"])
+        UI-->>A: displayFailureReasons(["Month mismatch","Telescope mismatch","Missing data-processing requirement"])
     else All checks PASSED
         SP->>SP: updateStatus("TESTED")
         SP->>DB: savePlan()
@@ -602,7 +591,7 @@ High
 
 ### Brief Description
 
-The Science Observer retrieves a submitted science plan and reviews its details. The system supports validation by checking the plan's star system visibility, telescope site suitability, and configuration correctness. Based on the results, the observer marks the plan as either "VALIDATED" or "INVALIDATED".
+The Science Observer retrieves a submitted science plan and reviews its details. The system supports validation by checking the plan's star system visibility, telescope site suitability, plan metadata and data-processing requirements. Based on the results, the observer marks the plan as either "VALIDATED" or "INVALIDATED".
 
 ### Trigger
 
@@ -618,7 +607,7 @@ flowchart TD
 A0([Start]) --> A1[Science Observer: Open 'Review Submitted Plans' page]
 A1 --> A2[System: List all plans with status = SUBMITTED]
 A2 --> A3[Observer: Select a plan by Plan ID]
-A3 --> A4[System: Load and display plan details<br/>Metadata, Objectives, Target Star,<br/>Telescope, Configs, Waypoints, Equipment]
+A3 --> A4[System: Load and display plan details<br/>Metadata, Objectives, Target Star,<br/>Telescope, Data-processing requirements]
 
 %% === Begin Validation Block ===
 A4 --> A5[Observer: Click 'Validate Plan']
@@ -635,14 +624,14 @@ A9 --> A10{Telescope matches quadrant?<br/>NQ→HAWAII, SQ→CHILE}
 A10 -- No --> F2[Mark validation FAILED<br/>Reason: Telescope<br/>location mismatch]
 F2 --> A13
 
-A10 -- Yes --> A11[Step 3: Check Waypoint Validity]
-A11 --> A12{Waypoints within<br/>defined ranges and<br/>correctly formatted?}
-A12 -- No --> F3[Mark validation FAILED<br/>Reason: Invalid waypoints]
+A10 -- Yes --> A11[Step 3: Check Plan Metadata]
+A11 --> A12{Creator, funding and<br/>objective complete?}
+A12 -- No --> F3[Mark validation FAILED<br/>Reason: Missing plan metadata]
 F3 --> A13
 
-A12 -- Yes --> A14[Step 4: Check Configuration Correctness]
-A14 --> A15{All technical configurations<br/>complete and valid?}
-A15 -- No --> F4[Mark validation FAILED<br/>Reason: Missing or invalid<br/>configuration data]
+A12 -- Yes --> A14[Step 4: Check Data Processing Requirements]
+A14 --> A15{File type, quality and<br/>image settings complete and valid?}
+A15 -- No --> F4[Mark validation FAILED<br/>Reason: Missing or invalid<br/>data-processing requirements]
 F4 --> A13
 
 A15 -- Yes --> A16[Step 5: Check Scheduling Conflicts]
@@ -700,7 +689,7 @@ sequenceDiagram
     UI->>SP: retrievePlanDetails(planID)
     SP->>DB: loadPlan(planID)
     DB-->>SP: return(planData)
-    SP-->>UI: return(metadata, objectives, targetStar, telescope, configs, waypoints, equipment)
+    SP-->>UI: return(metadata, objectives, targetStar, telescope, dataProcessing)
     UI-->>SO: displayPlanDetails()
 
     %% === 2. Begin Validation ===
@@ -731,27 +720,27 @@ sequenceDiagram
         else OK
             TS-->>SP: return("OK")
 
-            %% Step 3: Waypoints Validation
-            SP->>V: validateWaypoints(waypoints)
-            alt Waypoints invalid
-                V-->>SP: return("FAILED: Waypoints out of range or incorrectly formatted")
+            %% Step 3: Plan Metadata Validation
+            SP->>V: validateMetadata(creator, funding, objective)
+            alt Metadata incomplete
+                V-->>SP: return("FAILED: Missing plan metadata")
                 SP->>SP: updateStatus("INVALIDATED")
                 SP->>DB: savePlan()
                 DB-->>SP: return("SUCCESS")
                 SP-->>UI: return(validationResult: "FAILED")
-                UI-->>SO: displayFailureReasons("Invalid waypoints")
+                UI-->>SO: displayFailureReasons("Missing plan metadata")
             else OK
                 V-->>SP: return("OK")
 
-                %% Step 4: Configuration Check
-                SP->>V: validateConfigurations(mirror, calibration, lightType)
-                alt Configuration invalid
-                    V-->>SP: return("FAILED: Invalid configuration values")
+                %% Step 4: Data Processing Check
+                SP->>V: validateDataProcessing(fileType, fileQuality, colorType, imageSettings)
+                alt Data processing invalid
+                    V-->>SP: return("FAILED: Invalid data-processing values")
                     SP->>SP: updateStatus("INVALIDATED")
                     SP->>DB: savePlan()
                     DB-->>SP: return("SUCCESS")
                     SP-->>UI: return(validationResult: "FAILED")
-                    UI-->>SO: displayFailureReasons("Missing or invalid configuration data")
+                    UI-->>SO: displayFailureReasons("Missing or invalid data-processing requirements")
                 else All checks passed
                     V-->>SP: return("OK")
 
@@ -803,13 +792,13 @@ sequenceDiagram
 
 ---
 
-# UC04: Transform Plan to Observing Program
+# UC04: Create Observing Program
 
 ## Use Case Description
 
 ### Use Case Name
 
-Transform Plan to Observing Program
+Create Observing Program (transform a validated plan into an observing program)
 
 ### Use Case ID
 
@@ -864,7 +853,7 @@ A7 -- No --> E2[Display error: Missing required fields<br/>e.g., Fold Mirror Typ
 E2 --> A6
 
 A7 -- Yes --> A8{All values valid<br/>within defined lists?}
-A8 -- No --> E3[Display error: Invalid value<br/>e.g., Calibration Unit must be<br/>one of FLAT, DARK, ARC, BIAS]
+A8 -- No --> E3[Display error: Invalid value<br/>e.g., Calibration Unit must be<br/>one of ARGON, XENON, THAR, CUAR]
 E3 --> A6
 
 A8 -- Yes --> A9[System: Validate all entries<br/>Check completeness, data format, allowed values]
@@ -882,8 +871,7 @@ E5 --> A11
 
 A14 -- Yes --> A15[System: Display confirmation<br/>'Observing Program created and linked<br/>to Science Plan #XXXX']
 A15 --> A16[System: Notify Astronomer<br/>'Your Science Plan has been<br/>transformed to Observing Program']
-A16 --> A17[System: Notify Technical Team<br/>'New Observing Program ready for review']
-A17 --> A99
+A16 --> A99
 ```
 
 ---
@@ -933,7 +921,7 @@ sequenceDiagram
             UI->>V: validateValues(calibrationUnit, foldMirror, lightType)
             alt Invalid values
                 V-->>UI: return("FAILED: Invalid value")
-                UI-->>SO: displayError("Invalid value (e.g., Calibration Unit must be one of [FLAT, DARK, ARC, BIAS])")
+                UI-->>SO: displayError("Invalid value (e.g., Calibration Unit must be one of [ARGON, XENON, THAR, CUAR])")
                 SO->>UI: inputTechnicalDetails()
             else All values valid
                 V-->>UI: return("OK")
@@ -965,7 +953,6 @@ sequenceDiagram
                         %% === 8. Confirmation and Notification ===
                         UI-->>SO: displayConfirmation("Observing Program created and linked to Science Plan #" + planID)
                         UI->>A: notifyAstronomer("Your Science Plan has been transformed to Observing Program")
-                        UI->>SO: notifyTechnicalTeam("New Observing Program ready for review")
                         A->>A: receiveNotification("Plan transformed successfully")
                     end
                 end
@@ -1057,7 +1044,7 @@ A20 -- Yes --> A21[System: Alert operator<br/>• Telescope failure<br/>• Weat
 A21 --> A22[Ops Staff: Choose action]
 A22 --> A23{Which action?}
 
-A23 -- Pause --> P1[System: Update status → PAUSED]
+A23 -- Pause --> P1[System: Pause execution<br/>status stays RUNNING]
 P1 --> LP[Log: Paused, reason, timestamp]
 LP --> A24[System: Save to database]
 A24 --> A25[Monitor shows: Paused]
@@ -1079,7 +1066,7 @@ A30 --> A99
 A20 -- No --> A31[Update progress display]
 A31 --> A32{All waypoints<br/>processed?}
 A32 -- No --> A16
-A32 -- Yes --> A33[System: Update status → COMPLETED]
+A32 -- Yes --> A33[System: Update status → COMPLETE]
 
 %% Data collection and management (FR39-FR42)
 A33 --> A34[System: Collect all datasets from waypoints]
@@ -1187,14 +1174,14 @@ sequenceDiagram
 
                         alt Pause
                             Ops->>UI: clickPause()
-                            UI->>OP: updateStatus("PAUSED")
+                            UI->>OP: pauseExecution()
                             OP->>DB: saveStatus()
                             DB-->>OP: return("SUCCESS")
                             OP->>LOG: appendLog("Paused", reason)
                             LOG->>DB: save()
                             DB-->>LOG: return("SUCCESS")
                             LOG-->>OP: return("OK")
-                            OP-->>UI: return("PAUSED")
+                            OP-->>UI: return("RUNNING (paused)")
                             UI-->>Ops: showMonitor("Paused")
 
                         else Resume
@@ -1231,7 +1218,7 @@ sequenceDiagram
                 end
 
                 %% === 5. Completion & Data Management ===
-                OP->>OP: updateStatus("COMPLETED")
+                OP->>OP: updateStatus("COMPLETE")
                 OP->>DB: saveStatus()
                 DB-->>OP: return("SUCCESS")
                 OP->>LOG: appendLog("Completed", timestamp)
