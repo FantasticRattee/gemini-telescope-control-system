@@ -48,7 +48,7 @@ class Astronomer {
 class ScienceObserver {
   +reviewSciencePlan()
   +validateSciencePlan()
-  +transformToObservingProgram()
+  +createObservingProgram()
 }
 
 class OperationsStaff {
@@ -59,6 +59,8 @@ class OperationsStaff {
 %% ==== Core Entities ====
 class SciencePlan {
   +planID: String
+  +creator: String
+  +funding: Double
   +objectives: String
   +starSystem: StarSystem
   +observationDates: DateRange
@@ -150,20 +152,22 @@ class ExecutionLog {
 
 %% ==== Relationships with Cardinality ====
 
-Astronomer "1" --> "many" SciencePlan : creates/submits
-ScienceObserver "1" --> "many" SciencePlan : reviews/validates
-ScienceObserver "1" --> "many" ObservingProgram : transforms
-OperationsStaff "1" --> "many" ObservingProgram : executes
+Astronomer "1" --> "*" SciencePlan : creates/submits
+ScienceObserver "1" --> "*" SciencePlan : reviews/validates
+ScienceObserver "1" --> "*" ObservingProgram : creates
+OperationsStaff "1" --> "*" ObservingProgram : executes
 
-SciencePlan "1" --> "1" StarSystem
-SciencePlan "1" --> "1" TelescopeSite
+SciencePlan "*" --> "1" StarSystem
+SciencePlan "*" --> "1" TelescopeSite
+SciencePlan "1" --> "1" DateRange : observationDates
+SciencePlan --> Status
 
-ObservingProgram "1" --> "1" SciencePlan : linkedTo
+ObservingProgram "0..1" --> "1" SciencePlan : linkedTo
 ObservingProgram "1" --> "*" Waypoint : uses
 ObservingProgram "1" --> "*" Equipment : uses
-ObservingProgram "1" --> "1" CalibrationUnit : configures
-ObservingProgram "1" --> "1" MirrorType : configures
-ObservingProgram "1" --> "1" LightType : configures
+ObservingProgram "*" --> "1" CalibrationUnit : configures
+ObservingProgram "*" --> "1" MirrorType : configures
+ObservingProgram "*" --> "1" LightType : configures
 ObservingProgram "1" --> "0..1" ExecutionLog : has
 ```
 
@@ -638,13 +642,14 @@ A15 -- Yes --> A16[Step 5: Check Scheduling Conflicts]
 A16 --> A17{Conflicts with<br/>other plans?}
 A17 -- Yes --> A18[System: Display warning<br/>'⚠️ Scheduling conflicts detected']
 A18 --> A19[Show conflicting plan details:<br/>Plan IDs, dates, telescopes]
-A19 --> A20[System: Show summary<br/>'⚠️ Validation passed but conflicts exist<br/>Review and decide']
+A19 --> A20a[System: Show summary<br/>'⚠️ Validation passed but conflicts exist<br/>Review and decide']
 
-A17 -- No --> A20[System: Show summary<br/>'✅ All checks passed']
+A17 -- No --> A20b[System: Show summary<br/>'✅ All checks passed']
 
 %% === Decision by Observer ===
 A13[System: Show validation errors] --> A21{Observer decision?}
-A20 --> A21
+A20a --> A21
+A20b --> A21
 
 A21 -- Validate --> P1[System: Mark plan as VALIDATED<br/>Status = VALIDATED<br/>Record reviewer and timestamp]
 A21 -- Reject --> P2[System: Mark plan as INVALIDATED<br/>Status = INVALIDATED<br/>Record rejection reason]
@@ -668,14 +673,14 @@ A26 --> A99
 ```mermaid
 sequenceDiagram
     autonumber
-    participant SO as ScienceObserver
+    actor SO as ScienceObserver
     participant UI as UI
     participant SP as SciencePlan
     participant SS as StarSystem
     participant TS as TelescopeSite
     participant V as Validator
     participant DB as Database
-    participant A as Astronomer
+    actor A as Astronomer
 
     %% === 1. Review Submitted Plans ===
     SO->>UI: openValidationPage()
@@ -700,9 +705,6 @@ sequenceDiagram
     SP->>SS: checkObservationWindow(observationDates)
     alt Observation month mismatch
         SS-->>SP: return("FAILED: Observation not in visibility month")
-        SP->>SP: updateStatus("INVALIDATED")
-        SP->>DB: savePlan()
-        DB-->>SP: return("SUCCESS")
         SP-->>UI: return(validationResult: "FAILED")
         UI-->>SO: displayFailureReasons("Observation time not in visibility month")
     else OK
@@ -712,9 +714,6 @@ sequenceDiagram
         SP->>TS: checkTelescopeLocation(starSystem.quadrant)
         alt Telescope mismatch
             TS-->>SP: return("FAILED: Telescope location mismatch")
-            SP->>SP: updateStatus("INVALIDATED")
-            SP->>DB: savePlan()
-            DB-->>SP: return("SUCCESS")
             SP-->>UI: return(validationResult: "FAILED")
             UI-->>SO: displayFailureReasons("Telescope location mismatch")
         else OK
@@ -724,9 +723,6 @@ sequenceDiagram
             SP->>V: validateMetadata(creator, funding, objective)
             alt Metadata incomplete
                 V-->>SP: return("FAILED: Missing plan metadata")
-                SP->>SP: updateStatus("INVALIDATED")
-                SP->>DB: savePlan()
-                DB-->>SP: return("SUCCESS")
                 SP-->>UI: return(validationResult: "FAILED")
                 UI-->>SO: displayFailureReasons("Missing plan metadata")
             else OK
@@ -736,9 +732,6 @@ sequenceDiagram
                 SP->>V: validateDataProcessing(fileType, fileQuality, colorType, imageSettings)
                 alt Data processing invalid
                     V-->>SP: return("FAILED: Invalid data-processing values")
-                    SP->>SP: updateStatus("INVALIDATED")
-                    SP->>DB: savePlan()
-                    DB-->>SP: return("SUCCESS")
                     SP-->>UI: return(validationResult: "FAILED")
                     UI-->>SO: displayFailureReasons("Missing or invalid data-processing requirements")
                 else All checks passed
@@ -766,7 +759,7 @@ sequenceDiagram
     UI-->>SO: promptDecision("Validate | Reject")
 
     alt decision == VALIDATE
-        SO->>UI: clickValidate()
+        SO->>UI: confirmValidation()
         UI->>SP: approvePlan()
         SP->>SP: updateStatus("VALIDATED")
         SP->>DB: savePlan()
@@ -951,7 +944,7 @@ sequenceDiagram
                         OP-->>UI: return(programID)
 
                         %% === 8. Confirmation and Notification ===
-                        UI-->>SO: displayConfirmation("Observing Program created and linked to Science Plan #" + planID)
+                        UI-->>SO: displayConfirmation("Observing Program created and linked to Science Plan No. " + planID)
                         UI->>A: notifyAstronomer("Your Science Plan has been transformed to Observing Program")
                         A->>A: receiveNotification("Plan transformed successfully")
                     end

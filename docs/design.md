@@ -23,7 +23,6 @@ flowchart TD
     H1 -- Funding invalid --> M8[Error Message: Funding must be a positive number]
     H1 -- Date conflict --> M9[Error Message: Selected date range conflicts with another scheduled plan for this telescope.]
     H1 -- Out-of-range numeric --> M10[Error Message: Please enter valid decimal numbers within the allowed range]
-    H1 -- system loses connection --> M11[Error Message: Unable to save the science plan due to network or system error. Please try again later.]
 
     
     M1 --> U[Show Error Message]
@@ -46,8 +45,10 @@ flowchart TD
     I -- Draft --> J[Save plan as draft: status = CREATED, marked incomplete]
     I -- Final --> K[Save plan with status = CREATED]
 
-    J --> L[Show confirmation to Astronomer]
-    K --> L
+    J --> SV{Save successful?}
+    K --> SV
+    SV -- No --> M11[Error Message: Unable to save the science plan due to network or system error. Please try again later.]
+    SV -- Yes --> L[Show confirmation to Astronomer]
 
     L --> M[Choose next action: Edit, Delete, Test]
     M --> N{Which action?}
@@ -99,7 +100,7 @@ sequenceDiagram
     alt Invalid Input
         SPF-->>UI: Error message
         UI-->>Astronomer: Show specific error message
-        Note right of UI: e.g. Missing fields, Date error, Name exists,<br/>Funding invalid, Target not found,<br/>ColorType dependency missing,<br/>OCS incompatibility, network failure
+        Note right of UI: e.g. Missing fields, Date error, Name exists,<br/>Funding invalid, Target not found,<br/>ColorType dependency missing,<br/>OCS incompatibility
     else Valid Input
         SPF->>SPF: assign planNo and creator, setStatus(CREATED)
 
@@ -114,7 +115,7 @@ sequenceDiagram
                 SPR-->>SPF: Error: Unable to save
                 SPF-->>UI: Error message
                 UI-->>Astronomer: Show error: Try again later
-            else
+            else Saved
                 SPR-->>SPF: Saved
                 SPF-->>UI: "Science Plan created successfully with Plan No: N"
                 UI-->>Astronomer: Plan saved successfully
@@ -131,14 +132,14 @@ sequenceDiagram
 
         else Delete
             UI-->>Astronomer: Confirm delete?
-            Astronomer-->>UI: Confirm = Yes/No
+            Astronomer->>UI: Confirm = Yes/No
             alt Confirm = Yes
                 UI->>SPF: deleteSciencePlanByNo(planNo)
                 SPF->>SPR: delete(sp)
                 SPR-->>SPF: Deleted
                 SPF-->>UI: true
                 UI-->>Astronomer: Show success message
-            else
+            else Confirm = No
                 UI-->>Astronomer: Cancel delete
             end
 
@@ -220,7 +221,7 @@ sequenceDiagram
     UI->>SPF: getAllSciencePlans()
     SPF->>SPR: findByAstronomer(astronomer)
     SPR-->>SPF: Return list
-    SPF-->>UI: Display plans list
+    SPF-->>UI: Return plans list
 
     alt No science plan exists
         UI-->>Astronomer: Show blank page + "Go to Create Science Plan"
@@ -231,7 +232,8 @@ sequenceDiagram
         UI->>SPF: filterSciencePlansByStatus(status)
         SPF->>SPR: findByStatus(status)
         SPR-->>SPF: Return filtered list
-        SPF-->>UI: Show filtered science plans
+        SPF-->>UI: Return filtered list
+        UI-->>Astronomer: Display Science Plan List
 
         Astronomer->>UI: Select science plan
 
@@ -299,14 +301,14 @@ E3 --> A6
 
 A8 -- Yes --> A9[System: Validate all entries<br/>Check completeness, data format, allowed values]
 A9 --> A10{All validation<br/>checks passed?}
-A10 -- No --> E4[System: Record the Error and </br>Display: Show error Summary]
+A10 -- No --> E4[System: Record the error and<br/>display the error summary]
 E4 --> A6
 
 A10 -- Yes --> A12[System Update: Create new Observing Program record<br/>Status = CREATED<br/>Link with original Science Plan and Science Observer id]
 
 A12 --> A13[System: Save to database]
 A13 --> A14{Database save<br/>successful?}
-A14 -- No --> E5[System: Record Error Display: Failed to save &<br/>Please try again or contact admin.]
+A14 -- No --> E5[System: Record error and display:<br/>Failed to save. Please try again or contact admin.]
 E5 --> A11
 
 A14 -- Yes --> A15[System: Display confirmation<br/>'Observing Program created and linked<br/>to Science Plan #XXXX']
@@ -341,8 +343,10 @@ sequenceDiagram
         SPF-->>UI: return(sp)
         UI-->>SO: displayPlanDetails()
 
-        SO->>UI: chooseTemplate(templateID)
-        UI-->>SO: populateFields(templateData)
+        opt Use a template
+            SO->>UI: chooseTemplate(templateID)
+            UI-->>SO: populateFields(templateData)
+        end
 
         SO->>UI: enterProgramDetails(...)
         SO->>UI: clickCreateObservingProgram()
@@ -383,7 +387,7 @@ sequenceDiagram
                         OPR-->>OPF: return("SUCCESS")
                         OPF-->>UI: return(op)
 
-                        UI-->>SO: display("Program linked to Plan #" + planNo)
+                        UI-->>SO: display("Program linked to Plan No. " + planNo)
                         UI->>A: notify("Plan transformed to Observing Program.")
                     end
                 end
@@ -471,34 +475,34 @@ class TelePositionPair {
 class SciencePlanRepository {
     +save(sp:SciencePlan)
     +delete(sp:SciencePlan)
-    +findById(id:int) : SciencePlan
-    +findByAstronomer(a:Astronomer) : List~SciencePlan~
-    +findByStatus(status:STATUS) : List~SciencePlan~
-    +existsByName(name:String) : boolean
-    +hasDateConflict(telescope:String, start:Date, end:Date) : boolean
+    +findById(id:int) SciencePlan
+    +findByAstronomer(a:Astronomer) List~SciencePlan~
+    +findByStatus(status:STATUS) List~SciencePlan~
+    +existsByName(name:String) boolean
+    +hasDateConflict(telescope:String, start:Date, end:Date) boolean
 }
 
 class ObservingProgramRepository {
     +save(op:ObservingProgram)
-    +findBySciencePlan(sp:SciencePlan) : ObservingProgram
+    +findBySciencePlan(sp:SciencePlan) ObservingProgram
 }
 
 %% ===========================
 %% SUPPORTING SUBSYSTEMS
 %% ===========================
 class Validator {
-    +validateInputs(sp:SciencePlan) : boolean
-    +validateRequiredFields(op:ObservingProgram) : boolean
-    +validateAllowedValues(op:ObservingProgram) : boolean
-    +validateObservingProgram(op:ObservingProgram) : boolean
+    +validateInputs(sp:SciencePlan) boolean
+    +validateRequiredFields(op:ObservingProgram) boolean
+    +validateAllowedValues(op:ObservingProgram) boolean
+    +validateObservingProgram(op:ObservingProgram) boolean
 }
 
 class StarCatalog {
-    +containsTarget(target:String) : boolean
+    +containsTarget(target:String) boolean
 }
 
 class TelescopeSchedule {
-    +hasConflict(telescope:String, start:Date, end:Date) : boolean
+    +hasConflict(telescope:String, start:Date, end:Date) boolean
 }
 
 %% ===========================
@@ -522,7 +526,7 @@ class ObservingProgramFacade {
     +getObservingProgramBySciencePlan(sp:SciencePlan) ObservingProgram
 }
 
-note for SciencePlanFacade "Implemented together with ObservingProgramFacade\nas class OCS, which implements GeminiAPI.\nThe repositories are in-memory lists inside OCS."
+note for SciencePlanFacade "Implemented together with ObservingProgramFacade<br/>as class OCS, which implements GeminiAPI.<br/>The repositories are in-memory lists inside OCS."
 
 %% ===========================
 %% ENUMS
@@ -585,7 +589,7 @@ class LightType {
 Astronomer "1" --> "*" SciencePlan : creates
 ScienceObserver "1" --> "*" ObservingProgram : creates
 
-ObservingProgram "*" --> "1" SciencePlan : based on
+ObservingProgram "0..1" --> "1" SciencePlan : based on
 ObservingProgram "1" --> "*" TelePositionPair
 
 SciencePlan --> STATUS
@@ -595,15 +599,13 @@ SciencePlan --> ColorType
 ObservingProgram --> FoldMirrorType
 ObservingProgram --> CalibrationUnit
 ObservingProgram --> LightType
+ObservingProgram --> STATUS
 
 SciencePlanRepository --> SciencePlan
 ObservingProgramRepository --> ObservingProgram
 
-Validator --> SciencePlan
-Validator --> ObservingProgram
-
-StarCatalog --> SciencePlan
-TelescopeSchedule --> SciencePlan
+Validator ..> SciencePlan
+Validator ..> ObservingProgram
 
 SciencePlanFacade --> SciencePlanRepository
 SciencePlanFacade --> Validator
